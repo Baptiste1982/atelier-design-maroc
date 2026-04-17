@@ -50,7 +50,7 @@ export default function ProjectDetail({ projectId, currentWorker, onBack, onSele
   const [statuses, setStatuses] = useState([])
   const [progress, setProgress] = useState({ percent: 0 })
   const [loading, setLoading] = useState(true)
-  const [activeStep, setActiveStep] = useState(null)
+  const [activeStep, setActiveStep] = useState('all')
   const [showAddArticle, setShowAddArticle] = useState(false)
   const [showAddStep, setShowAddStep] = useState(false)
   const [newArticle, setNewArticle] = useState({ title: '', description: '', quantity: 1, unit: '' })
@@ -73,7 +73,6 @@ export default function ProjectDetail({ projectId, currentWorker, onBack, onSele
       setSteps(st)
       setArticles(art)
       setStatuses(sts)
-      if (!activeStep && st.length > 0) setActiveStep(st[0].id)
       const prog = await getProjectProgress(projectId)
       setProgress(prog)
 
@@ -184,25 +183,33 @@ export default function ProjectDetail({ projectId, currentWorker, onBack, onSele
 
   const isReadOnly = project.status === 'archived'
 
-  // Filter articles: only show those whose CURRENT step matches the active tab
-  const articlesAtStep = articles.filter(article => {
-    const currentStep = getArticleCurrentStep(article.id, steps, statuses)
-    return currentStep === activeStep
+  // Compute current step per article
+  const articleCurrentStep = {}
+  articles.forEach(a => {
+    articleCurrentStep[a.id] = getArticleCurrentStep(a.id, steps, statuses)
   })
 
   // Count articles completed (all steps done)
-  const doneCount = articles.filter(article =>
-    getArticleCurrentStep(article.id, steps, statuses) === '__done'
-  ).length
+  const doneCount = articles.filter(a => articleCurrentStep[a.id] === '__done').length
 
-  // Step tabs with count of articles AT that step
-  const stepTabs = steps.map(s => {
-    const count = articles.filter(a => getArticleCurrentStep(a.id, steps, statuses) === s.id).length
-    return { key: s.id, label: s.name, count }
-  })
+  // Filter: 'all' shows everything, or filter by step
+  const displayedArticles = activeStep === 'all'
+    ? articles
+    : articles.filter(a => articleCurrentStep[a.id] === activeStep)
 
-  const activeStepObj = steps.find(s => s.id === activeStep)
-  const activeStepIdx = steps.findIndex(s => s.id === activeStep)
+  // For each displayed article, find its current step info
+  const getStepName = (articleId) => {
+    const stepId = articleCurrentStep[articleId]
+    if (stepId === '__done') return 'Termine'
+    const step = steps.find(s => s.id === stepId)
+    return step?.name || ''
+  }
+
+  const getStepIndex = (articleId) => {
+    const stepId = articleCurrentStep[articleId]
+    if (stepId === '__done') return steps.length
+    return steps.findIndex(s => s.id === stepId)
+  }
 
   return (
     <div className="animate-fadeIn">
@@ -266,86 +273,89 @@ export default function ProjectDetail({ projectId, currentWorker, onBack, onSele
         </div>
       )}
 
-      {/* Active Step Header */}
-      <div className="flex items-center gap-2 mb-3 px-1">
-        {activeStepIdx > 0 && (
-          <button onClick={() => setActiveStep(steps[activeStepIdx - 1].id)} className="w-8 h-8 rounded-lg bg-dark/5 flex items-center justify-center text-muted text-sm active:scale-90">
-            ‹
-          </button>
-        )}
-        <div className="flex-1 text-center">
-          <span className="text-base font-bold text-dark">{activeStepObj?.name}</span>
-          <span className="text-xs text-muted ml-2">
-            {articlesAtStep.length} article{articlesAtStep.length !== 1 ? 's' : ''}
-          </span>
-        </div>
-        {activeStepIdx < steps.length - 1 && (
-          <button onClick={() => setActiveStep(steps[activeStepIdx + 1].id)} className="w-8 h-8 rounded-lg bg-dark/5 flex items-center justify-center text-muted text-sm active:scale-90">
-            ›
-          </button>
-        )}
+      {/* Filter tabs: Tous + each step */}
+      <div className="flex gap-1.5 overflow-x-auto pb-1 mb-4 scrollbar-none">
+        <button
+          onClick={() => setActiveStep('all')}
+          className={`whitespace-nowrap px-3.5 py-1.5 rounded-lg text-sm font-medium transition-all flex-shrink-0
+            ${activeStep === 'all' ? 'bg-primary text-white' : 'bg-dark/5 text-muted'}`}
+        >
+          Tous <span className="ml-1 text-xs opacity-70">{articles.length}</span>
+        </button>
+        {steps.map(s => {
+          const count = articles.filter(a => articleCurrentStep[a.id] === s.id).length
+          return (
+            <button
+              key={s.id}
+              onClick={() => setActiveStep(s.id)}
+              className={`whitespace-nowrap px-3.5 py-1.5 rounded-lg text-sm font-medium transition-all flex-shrink-0
+                ${activeStep === s.id ? 'bg-primary text-white' : 'bg-dark/5 text-muted'}`}
+            >
+              {s.name} <span className="ml-1 text-xs opacity-70">{count}</span>
+            </button>
+          )
+        })}
       </div>
 
-      {/* Step indicator dots */}
-      <div className="flex items-center justify-center gap-1.5 mb-4">
-        {steps.map((s, i) => (
-          <button
-            key={s.id}
-            onClick={() => setActiveStep(s.id)}
-            className={`h-1.5 rounded-full transition-all ${activeStep === s.id ? 'w-6 bg-primary' : 'w-1.5 bg-dark/15 hover:bg-dark/25'}`}
-          />
-        ))}
-      </div>
-
-      {/* Article List for current step */}
-      {articlesAtStep.length === 0 ? (
+      {/* Article List */}
+      {displayedArticles.length === 0 ? (
         <EmptyState
-          icon={doneCount === articles.length && articles.length > 0 ? '✓' : '📋'}
-          title={articles.length === 0
-            ? 'Aucun article'
-            : doneCount === articles.length
-              ? 'Tous les articles sont termines'
-              : 'Aucun article a cette etape'
-          }
-          subtitle={articles.length === 0
-            ? 'Importez un devis ou ajoutez des articles manuellement'
-            : doneCount < articles.length
-              ? 'Les articles avancent automatiquement apres validation'
-              : null
-          }
+          icon={articles.length === 0 ? '📋' : '✓'}
+          title={articles.length === 0 ? 'Aucun article' : 'Aucun article a cette etape'}
+          subtitle={articles.length === 0 ? 'Importez un devis ou ajoutez des articles manuellement' : null}
         />
       ) : (
         <div className="space-y-2">
-          {articlesAtStep.map(article => {
+          {displayedArticles.map(article => {
             const photoCount = photoCounts[article.id] || 0
             const isUploading = uploadingPhoto === article.id
+            const currentStepId = articleCurrentStep[article.id]
+            const isDone = currentStepId === '__done'
+            const stepName = getStepName(article.id)
+            const stepIdx = getStepIndex(article.id)
+            const stepPercent = steps.length > 0 ? Math.round((stepIdx / steps.length) * 100) : 0
             return (
               <div
                 key={article.id}
                 onClick={() => onSelectArticle(article.id)}
-                className="bg-surface rounded-xl border border-border p-3 transition-all cursor-pointer active:bg-dark/2"
+                className={`bg-surface rounded-xl border p-3 transition-all cursor-pointer active:bg-dark/2
+                  ${isDone ? 'border-primary/20' : 'border-border'}`}
               >
                 <div className="flex items-center gap-3">
-                  {!isReadOnly && (
+                  {!isReadOnly && !isDone && (
                     <div onClick={e => e.stopPropagation()}>
                       <TouchCheckbox
                         checked={false}
-                        onChange={() => handleToggle(article.id, activeStep)}
+                        onChange={() => handleToggle(article.id, currentStepId)}
                       />
+                    </div>
+                  )}
+                  {isDone && (
+                    <div className="w-12 h-12 min-w-12 rounded-xl bg-primary/10 flex items-center justify-center text-primary text-lg">
+                      ✓
                     </div>
                   )}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
-                      <span className="font-medium text-sm text-dark">
+                      <span className={`font-medium text-sm ${isDone ? 'text-muted' : 'text-dark'}`}>
                         {article.title}
                       </span>
                       <span className="text-xs text-muted bg-dark/5 px-1.5 py-0.5 rounded">
                         x{article.quantity}
                       </span>
                     </div>
-                    {article.description && article.description !== article.title && (
-                      <p className="text-xs text-muted mt-0.5 truncate">{article.description}</p>
-                    )}
+                    {/* Current step indicator */}
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className={`text-[11px] font-medium px-2 py-0.5 rounded-md
+                        ${isDone ? 'bg-primary/8 text-primary' : 'bg-accent/15 text-accent'}`}>
+                        {stepName}
+                      </span>
+                      {!isDone && (
+                        <div className="flex-1 h-1 bg-dark/6 rounded-full overflow-hidden max-w-20">
+                          <div className="h-1 bg-primary/40 rounded-full transition-all" style={{ width: `${stepPercent}%` }} />
+                        </div>
+                      )}
+                    </div>
                   </div>
                   {!isReadOnly && (
                     <button
@@ -357,7 +367,7 @@ export default function ProjectDetail({ projectId, currentWorker, onBack, onSele
                   )}
                 </div>
                 {/* Photo bar */}
-                <div className="flex items-center gap-2 mt-2 ml-15" onClick={e => e.stopPropagation()}>
+                <div className="flex items-center gap-2 mt-2 pl-15" onClick={e => e.stopPropagation()}>
                   <label className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium cursor-pointer transition-colors
                     ${isUploading ? 'bg-dark/5 text-muted' : 'bg-dark/4 text-muted hover:bg-primary/8 hover:text-primary'}`}>
                     <span>📷</span>
