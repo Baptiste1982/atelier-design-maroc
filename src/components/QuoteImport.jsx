@@ -161,12 +161,15 @@ export default function QuoteImport({ onNavigate }) {
                     className="mt-1 w-5 h-5 accent-primary"
                   />
                   <div className="flex-1 min-w-0">
+                    {a.zone && (i === 0 || a.zone !== articles[i - 1]?.zone) && (
+                      <div className="text-[10px] font-semibold text-primary uppercase tracking-wider mb-1 -mt-0.5">{a.zone}</div>
+                    )}
                     <input
                       value={a.title}
                       onChange={e => updateArticle(i, 'title', e.target.value)}
                       className="w-full text-sm font-medium text-dark bg-transparent outline-none border-b border-transparent focus:border-primary pb-0.5"
                     />
-                    <p className="text-xs text-muted mt-1 truncate">{a.description}</p>
+                    <p className="text-xs text-muted mt-1 line-clamp-2">{a.description}</p>
                     <div className="flex items-center gap-3 mt-1.5">
                       <span className="text-xs text-muted">Qte:</span>
                       <input

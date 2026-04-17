@@ -1,24 +1,87 @@
 import * as XLSX from 'xlsx'
 
-const QTY_PATTERNS = /^(qte|qty|quantit[eé]|nb|nombre|pcs|pieces)$/i
-const DESC_PATTERNS = /^(d[eé]signation|description|article|libell[eé]|intitul[eé]|produit|item|ref|r[eé]f[eé]rence)$/i
-const UNIT_PATTERNS = /^(unit[eé]|unite|u\.|um|mesure)$/i
-
-function synthesizeTitle(text) {
-  if (!text) return 'Article'
-  const words = String(text).trim().split(/\s+/)
-  return words.slice(0, 6).join(' ') + (words.length > 6 ? '...' : '')
+// Column detection patterns (accent-insensitive)
+const HEADER_PATTERNS = {
+  num: /^(n[°o]|num|numero|#|pos)$/i,
+  zone: /^(zone|local|espace|lieu|pi[eè]ce)/i,
+  desc: /^(d[eé]signation|description|article|libell[eé]|intitul[eé]|produit|item)/i,
+  materials: /^(mat[eé]riau|finition|mati[eè]re)/i,
+  dimensions: /^(dimension|taille|mesure|l\s*[×x])/i,
+  qty: /^(qt[eé]|qty|quantit[eé]|nb|nombre|pcs|pi[eè]ces)/i,
+  unit: /^(u\.|unit[eé]|unite|um|mesure)$/i,
+  price: /^(pu|prix\s*u|p\.u)/i,
+  total: /^(total|montant)/i,
+  notes: /^(notes?|remarques?|observations?|commentaires?)/i,
 }
 
+// Detect if a row is a section header (e.g. "▶ RDC — COMPTOIR CHOCOLAT")
+function isSectionHeader(row) {
+  const first = String(row[0] || '').trim()
+  // Section headers: start with ▶, or contain ▶ and have no numeric N°
+  if (first.includes('▶') || first.includes('►')) return true
+  // Check other cells for ▶
+  for (const cell of row) {
+    if (String(cell || '').trim().startsWith('▶') || String(cell || '').trim().startsWith('►')) return true
+  }
+  return false
+}
+
+// Extract current section name from a section header row
+function extractSectionName(row) {
+  for (const cell of row) {
+    const s = String(cell || '').trim()
+    if (s.includes('▶') || s.includes('►')) {
+      return s.replace(/[▶►\s]+/g, ' ').trim()
+    }
+  }
+  return ''
+}
+
+// Synthesize a short title from the designation
+function synthesizeTitle(text) {
+  if (!text) return 'Article'
+  let s = String(text).trim()
+  // Take text before first comma for a shorter title
+  const commaIdx = s.indexOf(',')
+  if (commaIdx > 10) s = s.substring(0, commaIdx)
+  // Limit to ~8 words
+  const words = s.split(/\s+/)
+  const title = words.slice(0, 8).join(' ')
+  return title + (words.length > 8 ? '...' : '')
+}
+
+// Build full description from multiple columns
+function buildDescription(row, cols) {
+  const parts = []
+  if (cols.desc >= 0) parts.push(String(row[cols.desc] || '').trim())
+  if (cols.materials >= 0) {
+    const mat = String(row[cols.materials] || '').trim()
+    if (mat) parts.push('Materiaux : ' + mat)
+  }
+  if (cols.dimensions >= 0) {
+    const dim = String(row[cols.dimensions] || '').trim()
+    if (dim) parts.push('Dimensions : ' + dim)
+  }
+  if (cols.notes >= 0) {
+    const note = String(row[cols.notes] || '').trim()
+    if (note) parts.push('Notes : ' + note)
+  }
+  return parts.filter(Boolean).join('\n')
+}
+
+// Detect columns from a header row
 function detectColumns(headers) {
-  let qtyCol = -1, descCol = -1, unitCol = -1
+  const cols = { num: -1, zone: -1, desc: -1, materials: -1, dimensions: -1, qty: -1, unit: -1, price: -1, total: -1, notes: -1 }
   headers.forEach((h, i) => {
-    const clean = String(h || '').trim()
-    if (QTY_PATTERNS.test(clean)) qtyCol = i
-    else if (DESC_PATTERNS.test(clean)) descCol = i
-    else if (UNIT_PATTERNS.test(clean)) unitCol = i
+    const clean = String(h || '').trim().replace(/\r?\n/g, ' ')
+    for (const [key, pattern] of Object.entries(HEADER_PATTERNS)) {
+      if (pattern.test(clean) && cols[key] === -1) {
+        cols[key] = i
+        break
+      }
+    }
   })
-  return { qtyCol, descCol, unitCol }
+  return cols
 }
 
 export function parseQuoteFile(file) {
@@ -37,47 +100,82 @@ export function parseQuoteFile(file) {
           return
         }
 
-        // Try to detect header row (first row with recognizable column names)
-        let headerIdx = 0
-        let detected = { qtyCol: -1, descCol: -1, unitCol: -1 }
-        for (let i = 0; i < Math.min(rows.length, 10); i++) {
-          const d = detectColumns(rows[i])
-          if (d.descCol !== -1) {
+        // Find header row: scan first 20 rows for one containing "Désignation" or "Qté"
+        let headerIdx = -1
+        let cols = null
+        for (let i = 0; i < Math.min(rows.length, 20); i++) {
+          const detected = detectColumns(rows[i])
+          if (detected.desc >= 0 && detected.qty >= 0) {
             headerIdx = i
-            detected = d
+            cols = detected
             break
+          }
+          // Fallback: at least desc column
+          if (detected.desc >= 0 && headerIdx === -1) {
+            headerIdx = i
+            cols = detected
           }
         }
 
-        const rawHeaders = rows[headerIdx].map(String)
-
-        // If no description column found, use the widest text column
-        if (detected.descCol === -1) {
+        // If nothing found, try heuristic
+        if (headerIdx === -1) {
+          headerIdx = 0
+          cols = { num: -1, zone: -1, desc: -1, materials: -1, dimensions: -1, qty: -1, unit: -1, price: -1, total: -1, notes: -1 }
+          // Guess: widest text column is desc
           let maxLen = 0
-          rows.slice(headerIdx + 1, headerIdx + 6).forEach(row => {
+          rows.slice(1, 6).forEach(row => {
             row.forEach((cell, i) => {
               const len = String(cell || '').length
-              if (len > maxLen) { maxLen = len; detected.descCol = i }
+              if (len > maxLen) { maxLen = len; cols.desc = i }
             })
           })
         }
 
+        const rawHeaders = rows[headerIdx].map(h => String(h || '').replace(/\r?\n/g, ' '))
+
         const articles = []
+        let currentSection = ''
+
         for (let i = headerIdx + 1; i < rows.length; i++) {
           const row = rows[i]
-          const desc = String(row[detected.descCol] || '').trim()
-          if (!desc) continue
 
-          const qty = detected.qtyCol >= 0 ? parseFloat(row[detected.qtyCol]) : 1
-          if (isNaN(qty) || qty <= 0) continue
+          // Skip empty rows
+          const hasContent = row.some(c => String(c || '').trim() !== '')
+          if (!hasContent) continue
 
-          const unit = detected.unitCol >= 0 ? String(row[detected.unitCol] || '').trim() : ''
+          // Detect section headers
+          if (isSectionHeader(row)) {
+            currentSection = extractSectionName(row)
+            continue
+          }
+
+          // Get designation
+          const designation = cols.desc >= 0 ? String(row[cols.desc] || '').trim() : ''
+          if (!designation) continue
+
+          // Get quantity — skip if not a valid number
+          let qty = 1
+          if (cols.qty >= 0) {
+            const rawQty = parseFloat(row[cols.qty])
+            if (isNaN(rawQty) || rawQty <= 0) continue
+            qty = rawQty
+          }
+
+          // Get unit
+          const unit = cols.unit >= 0 ? String(row[cols.unit] || '').trim() : ''
+
+          // Build full description from all detail columns
+          const description = buildDescription(row, cols)
+
+          // Get zone
+          const zone = cols.zone >= 0 ? String(row[cols.zone] || '').trim() : currentSection
 
           articles.push({
-            title: synthesizeTitle(desc),
-            description: desc,
+            title: synthesizeTitle(designation),
+            description,
             quantity: qty,
             unit,
+            zone: zone || currentSection,
           })
         }
 
