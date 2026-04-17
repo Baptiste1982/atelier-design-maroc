@@ -26,7 +26,7 @@ export default function Layout({ activePage, onNavigate, currentWorker, onLogout
       </header>
 
       {/* Content */}
-      <main className="flex-1 overflow-y-auto px-4 pt-4 pb-24">
+      <main className="flex-1 overflow-y-auto px-4 pt-4 pb-24 bg-bg">
         {children}
       </main>
 
