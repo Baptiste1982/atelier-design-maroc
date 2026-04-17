@@ -308,6 +308,18 @@ export async function fetchAssignmentsByArticle(articleId) {
   return data || []
 }
 
+export async function fetchAssignmentsByProject(projectId) {
+  const articles = await fetchArticlesByProject(projectId)
+  if (articles.length === 0) return []
+  const ids = articles.map(a => a.id)
+  const { data, error } = await supabase
+    .from('article_assignments')
+    .select('*, worker:workers(*)')
+    .in('article_id', ids)
+  if (error) throw error
+  return data || []
+}
+
 export async function assignWorker(articleId, workerId) {
   const { data, error } = await supabase
     .from('article_assignments')

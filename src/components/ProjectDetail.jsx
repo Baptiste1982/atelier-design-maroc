@@ -3,7 +3,8 @@ import {
   fetchProjectById, fetchProjectSteps, fetchArticlesByProject,
   fetchStepStatuses, toggleStepStatus, createArticle, deleteArticle,
   archiveProject, completeProject, addProjectStep, getProjectProgress,
-  uploadPhoto, fetchPhotosByArticle, uploadArticleImage
+  uploadPhoto, fetchPhotosByArticle, uploadArticleImage,
+  fetchAssignmentsByProject, fetchWorkers, assignWorker, unassignWorker
 } from '../lib/service'
 import { Card, Badge, ProgressBar, TouchCheckbox, StepPipeline, Modal, Input, Textarea, Spinner, ConfirmDialog, EmptyState, PageHeader, WorkerAvatar } from './ui'
 
@@ -60,6 +61,10 @@ export default function ProjectDetail({ projectId, currentWorker, onBack, onSele
   const [articlePhotos, setArticlePhotos] = useState({})
   const [uploadingPhoto, setUploadingPhoto] = useState(null)
   const [uploadingImage, setUploadingImage] = useState(null)
+  const [assignments, setAssignments] = useState([])
+  const [workers, setWorkers] = useState([])
+  const [workerFilter, setWorkerFilter] = useState('all')
+  const [assigningArticle, setAssigningArticle] = useState(null)
   const photoInputRefs = useRef({})
   const imageInputRefs = useRef({})
 
@@ -85,6 +90,14 @@ export default function ProjectDetail({ projectId, currentWorker, onBack, onSele
         photosMap[a.id] = photos
       }))
       setArticlePhotos(photosMap)
+
+      // Load assignments + workers
+      const [asg, wk] = await Promise.all([
+        fetchAssignmentsByProject(projectId),
+        fetchWorkers(true),
+      ])
+      setAssignments(asg)
+      setWorkers(wk)
     } catch {}
     setLoading(false)
   }, [projectId])
@@ -137,6 +150,21 @@ export default function ProjectDetail({ projectId, currentWorker, onBack, onSele
     }
     setUploadingImage(null)
     if (imageInputRefs.current[articleId]) imageInputRefs.current[articleId].value = ''
+  }
+
+  const handleAssign = async (articleId, workerId) => {
+    try {
+      const result = await assignWorker(articleId, workerId)
+      setAssignments(prev => [...prev, result])
+      setAssigningArticle(null)
+    } catch {}
+  }
+
+  const handleUnassign = async (articleId, workerId) => {
+    try {
+      await unassignWorker(articleId, workerId)
+      setAssignments(prev => prev.filter(a => !(a.article_id === articleId && a.worker_id === workerId)))
+    } catch {}
   }
 
   const handleAddArticle = async () => {
@@ -210,10 +238,18 @@ export default function ProjectDetail({ projectId, currentWorker, onBack, onSele
   // Count articles completed (all steps done)
   const doneCount = articles.filter(a => articleCurrentStep[a.id] === '__done').length
 
-  // Filter: 'all' shows everything, or filter by step
-  const displayedArticles = activeStep === 'all'
+  // Filter by step, then by worker
+  let displayedArticles = activeStep === 'all'
     ? articles
     : articles.filter(a => articleCurrentStep[a.id] === activeStep)
+
+  if (workerFilter !== 'all') {
+    const assignedArticleIds = assignments.filter(a => a.worker_id === workerFilter).map(a => a.article_id)
+    displayedArticles = displayedArticles.filter(a => assignedArticleIds.includes(a.id))
+  }
+
+  // Helper: get assigned workers for an article
+  const getArticleWorkers = (articleId) => assignments.filter(a => a.article_id === articleId)
 
   // For each displayed article, find its current step info
   const getStepName = (articleId) => {
@@ -315,6 +351,37 @@ export default function ProjectDetail({ projectId, currentWorker, onBack, onSele
         })}
       </div>
 
+      {/* Worker filter */}
+      {workers.length > 1 && (
+        <div className="flex gap-1.5 overflow-x-auto pb-1 mb-4 scrollbar-none">
+          <button
+            onClick={() => setWorkerFilter('all')}
+            className={`whitespace-nowrap px-3 py-1.5 rounded-lg text-xs font-medium transition-all flex-shrink-0
+              ${workerFilter === 'all' ? 'bg-accent text-white' : 'bg-dark/5 text-muted'}`}
+          >
+            Tous
+          </button>
+          <button
+            onClick={() => setWorkerFilter(currentWorker?.id)}
+            className={`whitespace-nowrap px-3 py-1.5 rounded-lg text-xs font-medium transition-all flex-shrink-0
+              ${workerFilter === currentWorker?.id ? 'bg-accent text-white' : 'bg-dark/5 text-muted'}`}
+          >
+            Mes articles
+          </button>
+          {workers.filter(w => w.id !== currentWorker?.id).map(w => (
+            <button
+              key={w.id}
+              onClick={() => setWorkerFilter(w.id)}
+              className={`whitespace-nowrap flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all flex-shrink-0
+                ${workerFilter === w.id ? 'bg-accent text-white' : 'bg-dark/5 text-muted'}`}
+            >
+              <WorkerAvatar name={w.name} size="sm" />
+              {w.name}
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* Article List */}
       {displayedArticles.length === 0 ? (
         <EmptyState
@@ -410,6 +477,27 @@ export default function ProjectDetail({ projectId, currentWorker, onBack, onSele
                           onChange={e => handlePhotoUpload(article.id, e.target.files)}
                         />
                       </label>
+                      {/* Assigned workers + assign button */}
+                      {!isReadOnly && (
+                        <>
+                          {getArticleWorkers(article.id).map(a => (
+                            <button
+                              key={a.id}
+                              onClick={() => handleUnassign(article.id, a.worker_id)}
+                              className="group"
+                              title={`Retirer ${a.worker?.name}`}
+                            >
+                              <WorkerAvatar name={a.worker?.name} size="sm" />
+                            </button>
+                          ))}
+                          <button
+                            onClick={() => setAssigningArticle(article.id)}
+                            className="w-7 h-7 rounded-full border border-dashed border-dark/15 flex items-center justify-center text-muted text-xs hover:border-accent hover:text-accent transition-colors"
+                          >
+                            +
+                          </button>
+                        </>
+                      )}
                     </div>
                   </div>
                   {!isReadOnly && (
@@ -436,6 +524,29 @@ export default function ProjectDetail({ projectId, currentWorker, onBack, onSele
           + Ajouter un article
         </button>
       )}
+
+      {/* Assign Worker Modal */}
+      <Modal open={!!assigningArticle} onClose={() => setAssigningArticle(null)} title="Assigner un ouvrier">
+        {(() => {
+          const alreadyAssigned = assignments.filter(a => a.article_id === assigningArticle).map(a => a.worker_id)
+          const available = workers.filter(w => !alreadyAssigned.includes(w.id))
+          if (available.length === 0) return <p className="text-sm text-muted py-4">Tous les ouvriers sont deja assignes.</p>
+          return (
+            <div className="space-y-2">
+              {available.map(w => (
+                <button
+                  key={w.id}
+                  onClick={() => handleAssign(assigningArticle, w.id)}
+                  className="w-full flex items-center gap-3 p-3 rounded-xl border border-border hover:bg-accent/5 transition-colors active:scale-[0.98]"
+                >
+                  <WorkerAvatar name={w.name} size="md" />
+                  <span className="font-medium text-dark">{w.name}</span>
+                </button>
+              ))}
+            </div>
+          )
+        })()}
+      </Modal>
 
       {/* Add Article Modal */}
       <Modal open={showAddArticle} onClose={() => setShowAddArticle(false)} title="Nouvel article">
