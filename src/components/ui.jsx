@@ -118,7 +118,7 @@ export function FAB({ onClick, label }) {
   return (
     <button
       onClick={onClick}
-      className="fixed bottom-24 right-5 z-40 w-14 h-14 rounded-full bg-primary text-white shadow-lg flex items-center justify-center text-2xl font-light active:scale-90 transition-transform hover:bg-primary-light"
+      className="fixed bottom-16 right-5 z-40 w-14 h-14 rounded-full bg-primary text-white shadow-lg flex items-center justify-center text-2xl font-light active:scale-90 transition-transform hover:bg-primary-light"
       title={label}
     >
       +
