@@ -39,9 +39,7 @@ html, body, #root {
 }
 
 body {
-  padding-top: env(safe-area-inset-top);
-  padding-left: env(safe-area-inset-left);
-  padding-right: env(safe-area-inset-right);
+  margin: 0;
 }
 
 * {
@@ -69,10 +67,6 @@ body {
 }
 @keyframes spin {
   to { transform: rotate(360deg); }
-}
-
-.nav-safe {
-  padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
 .animate-fadeIn { animation: fadeIn 0.3s ease-out; }
