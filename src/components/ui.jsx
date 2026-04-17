@@ -23,11 +23,11 @@ export function Card({ children, className = '', onClick, ...props }) {
 
 // ─── Badge ────────────────────────────────────────────────
 const BADGE_COLORS = {
-  active: 'bg-success/10 text-success',
-  completed: 'bg-primary/10 text-primary',
-  archived: 'bg-muted/10 text-muted',
-  admin: 'bg-accent/20 text-accent',
-  worker: 'bg-border text-muted',
+  active: 'bg-primary/8 text-primary',
+  completed: 'bg-dark/6 text-dark',
+  archived: 'bg-dark/6 text-muted',
+  admin: 'bg-accent/15 text-accent',
+  worker: 'bg-dark/5 text-muted',
 }
 export function Badge({ variant = 'active', children }) {
   return (
@@ -37,12 +37,54 @@ export function Badge({ variant = 'active', children }) {
   )
 }
 
+// ─── StepPipeline ─────────────────────────────────────────
+export function StepPipeline({ steps, statuses, articles, activeStep, onStepClick }) {
+  return (
+    <div className="bg-surface rounded-2xl border border-border p-4 mb-4">
+      {/* Title is in parent toggle button */}
+      <div className="space-y-1.5">
+        {steps.map((step, i) => {
+          const stepStatuses = statuses.filter(s => s.step_id === step.id)
+          const done = stepStatuses.filter(s => s.completed).length
+          const total = stepStatuses.length
+          const pct = total > 0 ? Math.round((done / total) * 100) : 0
+          const isActive = activeStep === step.id
+          const isDone = total > 0 && done === total
+          return (
+            <button
+              key={step.id}
+              onClick={() => onStepClick(step.id)}
+              className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all text-left
+                ${isActive ? 'bg-primary/6 ring-1 ring-primary/20' : 'hover:bg-dark/3'}`}
+            >
+              <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0
+                ${isDone ? 'bg-primary text-white' : isActive ? 'bg-primary/15 text-primary' : 'bg-dark/6 text-muted'}`}>
+                {isDone ? '✓' : i + 1}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between">
+                  <span className={`text-sm font-medium ${isActive ? 'text-dark' : 'text-muted'}`}>{step.name}</span>
+                  <span className={`text-xs tabular-nums ${isDone ? 'text-primary font-semibold' : 'text-muted'}`}>
+                    {done}/{total}
+                  </span>
+                </div>
+                <div className="h-1 bg-dark/6 rounded-full overflow-hidden mt-1">
+                  <div className={`h-1 rounded-full transition-all duration-500 ${isDone ? 'bg-primary' : 'bg-primary/40'}`} style={{ width: `${pct}%` }} />
+                </div>
+              </div>
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 // ─── ProgressBar ──────────────────────────────────────────
 export function ProgressBar({ percent = 0, height = 'h-2', className = '' }) {
-  const color = percent === 100 ? 'bg-success' : percent > 50 ? 'bg-primary' : percent > 20 ? 'bg-warning' : 'bg-danger'
   return (
-    <div className={`${height} bg-border/50 rounded-full overflow-hidden ${className}`}>
-      <div className={`${height} ${color} rounded-full transition-all duration-500`} style={{ width: `${percent}%` }} />
+    <div className={`${height} bg-dark/8 rounded-full overflow-hidden ${className}`}>
+      <div className={`${height} bg-primary rounded-full transition-all duration-500`} style={{ width: `${percent}%` }} />
     </div>
   )
 }
@@ -60,8 +102,8 @@ export function TouchCheckbox({ checked, onChange, disabled }) {
       disabled={disabled}
       className={`w-12 h-12 min-w-12 rounded-xl border-2 flex items-center justify-center transition-all
         ${checked
-          ? 'bg-success border-success text-white animate-checkPop'
-          : 'bg-surface border-border text-transparent hover:border-primary/40'
+          ? 'bg-primary border-primary text-white animate-checkPop'
+          : 'bg-surface border-dark/15 text-transparent hover:border-primary/40'
         } ${disabled ? 'opacity-50' : 'active:scale-90'}`}
     >
       <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">

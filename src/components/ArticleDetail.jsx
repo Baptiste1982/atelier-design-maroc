@@ -139,7 +139,7 @@ export default function ArticleDetail({ articleId, projectId, currentWorker, onB
                   onChange={() => handleToggle(step.id)}
                 />
                 <div className="flex-1">
-                  <span className={`text-sm font-medium ${status?.completed ? 'text-success line-through' : 'text-dark'}`}>
+                  <span className={`text-sm font-medium ${status?.completed ? 'text-primary' : 'text-dark'}`}>
                     {step.name}
                   </span>
                   {status?.completed && status?.completed_at && (

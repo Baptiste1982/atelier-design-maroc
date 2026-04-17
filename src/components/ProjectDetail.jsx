@@ -4,7 +4,16 @@ import {
   fetchStepStatuses, toggleStepStatus, createArticle, deleteArticle,
   archiveProject, completeProject, addProjectStep, getProjectProgress
 } from '../lib/service'
-import { Card, Badge, ProgressBar, TouchCheckbox, Modal, Input, Textarea, Spinner, ConfirmDialog, EmptyState, Tabs, PageHeader, WorkerAvatar } from './ui'
+import { Card, Badge, ProgressBar, TouchCheckbox, StepPipeline, Modal, Input, Textarea, Spinner, ConfirmDialog, EmptyState, PageHeader, WorkerAvatar } from './ui'
+
+// Get the current step for an article = first unchecked step in order
+function getArticleCurrentStep(articleId, steps, statuses) {
+  for (const step of steps) {
+    const s = statuses.find(st => st.article_id === articleId && st.step_id === step.id)
+    if (!s || !s.completed) return step.id
+  }
+  return '__done' // all steps completed
+}
 
 export default function ProjectDetail({ projectId, currentWorker, onBack, onSelectArticle }) {
   const [project, setProject] = useState(null)
@@ -19,6 +28,7 @@ export default function ProjectDetail({ projectId, currentWorker, onBack, onSele
   const [newArticle, setNewArticle] = useState({ title: '', description: '', quantity: 1, unit: '' })
   const [newStepName, setNewStepName] = useState('')
   const [confirm, setConfirm] = useState(null)
+  const [showPipeline, setShowPipeline] = useState(true)
 
   const load = useCallback(async () => {
     try {
@@ -118,17 +128,26 @@ export default function ProjectDetail({ projectId, currentWorker, onBack, onSele
   if (!project) return <EmptyState icon="❌" title="Projet introuvable" />
 
   const isReadOnly = project.status === 'archived'
-  const stepTabs = [
-    ...steps.map(s => {
-      const stepStatuses = statuses.filter(st => st.step_id === s.id)
-      const done = stepStatuses.filter(st => st.completed).length
-      return { key: s.id, label: s.name, count: `${done}/${stepStatuses.length}` }
-    }),
-    ...(isReadOnly ? [] : [{ key: '__add', label: '+ Etape' }])
-  ]
 
-  const filteredArticles = articles
-  const currentStatuses = statuses.filter(s => s.step_id === activeStep)
+  // Filter articles: only show those whose CURRENT step matches the active tab
+  const articlesAtStep = articles.filter(article => {
+    const currentStep = getArticleCurrentStep(article.id, steps, statuses)
+    return currentStep === activeStep
+  })
+
+  // Count articles completed (all steps done)
+  const doneCount = articles.filter(article =>
+    getArticleCurrentStep(article.id, steps, statuses) === '__done'
+  ).length
+
+  // Step tabs with count of articles AT that step
+  const stepTabs = steps.map(s => {
+    const count = articles.filter(a => getArticleCurrentStep(a.id, steps, statuses) === s.id).length
+    return { key: s.id, label: s.name, count }
+  })
+
+  const activeStepObj = steps.find(s => s.id === activeStep)
+  const activeStepIdx = steps.findIndex(s => s.id === activeStep)
 
   return (
     <div className="animate-fadeIn">
@@ -146,85 +165,139 @@ export default function ProjectDetail({ projectId, currentWorker, onBack, onSele
         </Badge>
       </div>
 
-      {/* Progress */}
+      {/* Global Progress */}
       <div className="bg-surface rounded-2xl border border-border p-4 mb-4">
         <div className="flex items-center justify-between mb-2">
           <span className="text-sm font-medium text-dark">Progression globale</span>
-          <span className="text-sm font-bold text-primary">{progress.percent}%</span>
+          <span className="text-sm font-bold text-dark">{progress.percent}%</span>
         </div>
-        <ProgressBar percent={progress.percent} height="h-3" />
+        <ProgressBar percent={progress.percent} height="h-2.5" />
         <div className="flex items-center justify-between mt-2">
           <span className="text-xs text-muted">{progress.completed}/{progress.total} validations</span>
-          <span className="text-xs text-muted">{articles.length} articles</span>
+          <span className="text-xs text-muted">{doneCount}/{articles.length} articles termines</span>
         </div>
       </div>
 
+      {/* Step Pipeline (collapsible) */}
+      <button
+        onClick={() => setShowPipeline(!showPipeline)}
+        className="w-full flex items-center justify-between px-1 mb-2 text-xs font-semibold text-muted uppercase tracking-wider"
+      >
+        <span>Avancement par etape</span>
+        <span className="text-[10px]">{showPipeline ? '▲' : '▼'}</span>
+      </button>
+      {showPipeline && (
+        <StepPipeline
+          steps={steps}
+          statuses={statuses}
+          articles={articles}
+          activeStep={activeStep}
+          onStepClick={setActiveStep}
+        />
+      )}
+
       {/* Actions */}
       {!isReadOnly && (
-        <div className="flex gap-2 mb-4 overflow-x-auto pb-1">
-          <button onClick={handleComplete} className="flex-shrink-0 px-4 py-2 rounded-xl bg-success/10 text-success text-sm font-medium active:scale-95 transition-transform">
+        <div className="flex gap-2 mb-4">
+          <button onClick={handleComplete} className="flex-shrink-0 px-4 py-2 rounded-xl bg-dark/5 text-dark text-sm font-medium active:scale-95 transition-transform">
             Terminer
           </button>
-          <button onClick={handleArchive} className="flex-shrink-0 px-4 py-2 rounded-xl bg-muted/10 text-muted text-sm font-medium active:scale-95 transition-transform">
+          <button onClick={handleArchive} className="flex-shrink-0 px-4 py-2 rounded-xl bg-dark/5 text-muted text-sm font-medium active:scale-95 transition-transform">
             Archiver
+          </button>
+          <button onClick={() => setShowAddStep(true)} className="flex-shrink-0 px-4 py-2 rounded-xl bg-dark/5 text-muted text-sm font-medium active:scale-95 transition-transform ml-auto">
+            + Etape
           </button>
         </div>
       )}
 
-      {/* Step Tabs */}
-      <Tabs
-        tabs={stepTabs}
-        active={activeStep}
-        onChange={key => key === '__add' ? setShowAddStep(true) : setActiveStep(key)}
-      />
+      {/* Active Step Header */}
+      <div className="flex items-center gap-2 mb-3 px-1">
+        {activeStepIdx > 0 && (
+          <button onClick={() => setActiveStep(steps[activeStepIdx - 1].id)} className="w-8 h-8 rounded-lg bg-dark/5 flex items-center justify-center text-muted text-sm active:scale-90">
+            ‹
+          </button>
+        )}
+        <div className="flex-1 text-center">
+          <span className="text-base font-bold text-dark">{activeStepObj?.name}</span>
+          <span className="text-xs text-muted ml-2">
+            {articlesAtStep.length} article{articlesAtStep.length !== 1 ? 's' : ''}
+          </span>
+        </div>
+        {activeStepIdx < steps.length - 1 && (
+          <button onClick={() => setActiveStep(steps[activeStepIdx + 1].id)} className="w-8 h-8 rounded-lg bg-dark/5 flex items-center justify-center text-muted text-sm active:scale-90">
+            ›
+          </button>
+        )}
+      </div>
 
-      {/* Article List */}
-      {filteredArticles.length === 0 ? (
-        <EmptyState icon="📋" title="Aucun article" subtitle="Importez un devis ou ajoutez des articles manuellement" />
+      {/* Step indicator dots */}
+      <div className="flex items-center justify-center gap-1.5 mb-4">
+        {steps.map((s, i) => (
+          <button
+            key={s.id}
+            onClick={() => setActiveStep(s.id)}
+            className={`h-1.5 rounded-full transition-all ${activeStep === s.id ? 'w-6 bg-primary' : 'w-1.5 bg-dark/15 hover:bg-dark/25'}`}
+          />
+        ))}
+      </div>
+
+      {/* Article List for current step */}
+      {articlesAtStep.length === 0 ? (
+        <EmptyState
+          icon={doneCount === articles.length && articles.length > 0 ? '✓' : '📋'}
+          title={articles.length === 0
+            ? 'Aucun article'
+            : doneCount === articles.length
+              ? 'Tous les articles sont termines'
+              : 'Aucun article a cette etape'
+          }
+          subtitle={articles.length === 0
+            ? 'Importez un devis ou ajoutez des articles manuellement'
+            : doneCount < articles.length
+              ? 'Les articles avancent automatiquement apres validation'
+              : null
+          }
+        />
       ) : (
         <div className="space-y-2">
-          {filteredArticles.map(article => {
-            const stepStatus = currentStatuses.find(s => s.article_id === article.id)
-            const allDone = statuses.filter(s => s.article_id === article.id).every(s => s.completed)
-            return (
+          {articlesAtStep.map(article => (
+            <div
+              key={article.id}
+              className="flex items-center gap-3 bg-surface rounded-xl border border-border p-3 transition-all"
+            >
+              {!isReadOnly && (
+                <TouchCheckbox
+                  checked={false}
+                  onChange={() => handleToggle(article.id, activeStep)}
+                />
+              )}
               <div
-                key={article.id}
-                className={`flex items-center gap-3 bg-surface rounded-xl border p-3 transition-colors
-                  ${allDone ? 'border-success/30 bg-success/5' : 'border-border'}`}
+                className="flex-1 min-w-0 cursor-pointer"
+                onClick={() => onSelectArticle(article.id)}
               >
-                {!isReadOnly && (
-                  <TouchCheckbox
-                    checked={stepStatus?.completed}
-                    onChange={() => handleToggle(article.id, activeStep)}
-                  />
-                )}
-                <div
-                  className="flex-1 min-w-0 cursor-pointer"
-                  onClick={() => onSelectArticle(article.id)}
-                >
-                  <div className="flex items-center gap-2">
-                    <span className={`font-medium text-sm ${allDone ? 'line-through text-muted' : 'text-dark'}`}>
-                      {article.title}
-                    </span>
-                    <span className="text-xs text-muted bg-border/50 px-1.5 py-0.5 rounded">
-                      x{article.quantity}
-                    </span>
-                  </div>
-                  {article.description && article.description !== article.title && (
-                    <p className="text-xs text-muted mt-0.5 truncate">{article.description}</p>
-                  )}
+                <div className="flex items-center gap-2">
+                  <span className="font-medium text-sm text-dark">
+                    {article.title}
+                  </span>
+                  <span className="text-xs text-muted bg-dark/5 px-1.5 py-0.5 rounded">
+                    x{article.quantity}
+                  </span>
                 </div>
-                {!isReadOnly && (
-                  <button
-                    onClick={() => handleDeleteArticle(article.id, article.title)}
-                    className="text-muted/40 hover:text-danger text-sm p-1"
-                  >
-                    ✕
-                  </button>
+                {article.description && article.description !== article.title && (
+                  <p className="text-xs text-muted mt-0.5 truncate">{article.description}</p>
                 )}
               </div>
-            )
-          })}
+              {!isReadOnly && (
+                <button
+                  onClick={() => handleDeleteArticle(article.id, article.title)}
+                  className="text-dark/20 hover:text-danger text-sm p-1"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+          ))}
         </div>
       )}
 
@@ -232,7 +305,7 @@ export default function ProjectDetail({ projectId, currentWorker, onBack, onSele
       {!isReadOnly && (
         <button
           onClick={() => setShowAddArticle(true)}
-          className="w-full mt-3 py-3 rounded-xl border-2 border-dashed border-border text-muted text-sm font-medium hover:border-primary/40 hover:text-primary transition-colors active:scale-[0.98]"
+          className="w-full mt-3 py-3 rounded-xl border-2 border-dashed border-dark/10 text-muted text-sm font-medium hover:border-primary/30 hover:text-primary transition-colors active:scale-[0.98]"
         >
           + Ajouter un article
         </button>
