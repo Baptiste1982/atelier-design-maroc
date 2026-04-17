@@ -65,6 +65,9 @@ export default function ProjectDetail({ projectId, currentWorker, onBack, onSele
   const [workers, setWorkers] = useState([])
   const [workerFilter, setWorkerFilter] = useState('all')
   const [assigningArticle, setAssigningArticle] = useState(null)
+  const [showBulkAssign, setShowBulkAssign] = useState(false)
+  const [bulkScope, setBulkScope] = useState('project')
+  const [bulkSelectedWorkers, setBulkSelectedWorkers] = useState([])
   const photoInputRefs = useRef({})
   const imageInputRefs = useRef({})
 
@@ -164,6 +167,34 @@ export default function ProjectDetail({ projectId, currentWorker, onBack, onSele
     try {
       await unassignWorker(articleId, workerId)
       setAssignments(prev => prev.filter(a => !(a.article_id === articleId && a.worker_id === workerId)))
+    } catch {}
+  }
+
+  const handleBulkAssign = async () => {
+    if (bulkSelectedWorkers.length === 0) return
+    try {
+      // Determine which articles to assign based on scope
+      let targetArticles = articles
+      if (bulkScope !== 'project') {
+        // bulkScope is a step ID — assign only articles currently at that step
+        targetArticles = articles.filter(a => getArticleCurrentStep(a.id, steps, statuses) === bulkScope)
+      }
+      // For each article x worker combo, assign if not already assigned
+      const existingPairs = new Set(assignments.map(a => `${a.article_id}__${a.worker_id}`))
+      const toAssign = []
+      for (const art of targetArticles) {
+        for (const wid of bulkSelectedWorkers) {
+          if (!existingPairs.has(`${art.id}__${wid}`)) {
+            toAssign.push({ articleId: art.id, workerId: wid })
+          }
+        }
+      }
+      for (const { articleId, workerId } of toAssign) {
+        await assignWorker(articleId, workerId)
+      }
+      setShowBulkAssign(false)
+      setBulkSelectedWorkers([])
+      await load()
     } catch {}
   }
 
@@ -320,6 +351,9 @@ export default function ProjectDetail({ projectId, currentWorker, onBack, onSele
           </button>
           <button onClick={handleArchive} className="flex-shrink-0 px-4 py-2 rounded-xl bg-dark/5 text-muted text-sm font-medium active:scale-95 transition-transform">
             Archiver
+          </button>
+          <button onClick={() => { setBulkScope('project'); setShowBulkAssign(true) }} className="flex-shrink-0 px-4 py-2 rounded-xl bg-accent/10 text-accent text-sm font-medium active:scale-95 transition-transform">
+            Assigner
           </button>
           <button onClick={() => setShowAddStep(true)} className="flex-shrink-0 px-4 py-2 rounded-xl bg-dark/5 text-muted text-sm font-medium active:scale-95 transition-transform ml-auto">
             + Etape
@@ -524,6 +558,55 @@ export default function ProjectDetail({ projectId, currentWorker, onBack, onSele
           + Ajouter un article
         </button>
       )}
+
+      {/* Bulk Assign Modal */}
+      <Modal open={showBulkAssign} onClose={() => { setShowBulkAssign(false); setBulkSelectedWorkers([]) }} title="Assigner en masse">
+        {/* Scope selector */}
+        <div className="mb-4">
+          <label className="block text-sm font-medium text-muted mb-1.5">Quels articles ?</label>
+          <select
+            value={bulkScope}
+            onChange={e => setBulkScope(e.target.value)}
+            className="w-full px-4 py-3 rounded-xl border border-border bg-surface text-dark text-sm outline-none focus:border-accent"
+          >
+            <option value="project">Tout le chantier ({articles.length} articles)</option>
+            {steps.map(s => {
+              const count = articles.filter(a => articleCurrentStep[a.id] === s.id).length
+              return <option key={s.id} value={s.id}>{s.name} ({count} articles)</option>
+            })}
+          </select>
+        </div>
+
+        {/* Worker selection */}
+        <label className="block text-sm font-medium text-muted mb-1.5">A qui ?</label>
+        <div className="space-y-2 mb-4">
+          {workers.map(w => {
+            const selected = bulkSelectedWorkers.includes(w.id)
+            return (
+              <button
+                key={w.id}
+                onClick={() => setBulkSelectedWorkers(prev =>
+                  selected ? prev.filter(id => id !== w.id) : [...prev, w.id]
+                )}
+                className={`w-full flex items-center gap-3 p-3 rounded-xl border transition-all active:scale-[0.98]
+                  ${selected ? 'border-accent bg-accent/5' : 'border-border'}`}
+              >
+                <WorkerAvatar name={w.name} size="md" />
+                <span className="font-medium text-dark flex-1 text-left">{w.name}</span>
+                {selected && <span className="text-accent font-bold">✓</span>}
+              </button>
+            )
+          })}
+        </div>
+
+        <button
+          onClick={handleBulkAssign}
+          disabled={bulkSelectedWorkers.length === 0}
+          className="w-full py-3.5 rounded-xl bg-accent text-white font-semibold disabled:opacity-50 active:scale-[0.98] transition-transform"
+        >
+          Assigner {bulkSelectedWorkers.length > 0 ? `(${bulkSelectedWorkers.length} ouvrier${bulkSelectedWorkers.length > 1 ? 's' : ''})` : ''}
+        </button>
+      </Modal>
 
       {/* Assign Worker Modal */}
       <Modal open={!!assigningArticle} onClose={() => setAssigningArticle(null)} title="Assigner un ouvrier">
