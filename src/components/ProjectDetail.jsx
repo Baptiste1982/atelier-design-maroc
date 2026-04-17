@@ -1,10 +1,38 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import {
   fetchProjectById, fetchProjectSteps, fetchArticlesByProject,
   fetchStepStatuses, toggleStepStatus, createArticle, deleteArticle,
-  archiveProject, completeProject, addProjectStep, getProjectProgress
+  archiveProject, completeProject, addProjectStep, getProjectProgress,
+  uploadPhoto, fetchPhotosByArticle
 } from '../lib/service'
 import { Card, Badge, ProgressBar, TouchCheckbox, StepPipeline, Modal, Input, Textarea, Spinner, ConfirmDialog, EmptyState, PageHeader, WorkerAvatar } from './ui'
+
+// Compress image before upload
+function compressImage(file, maxSize = 1200, quality = 0.8) {
+  return new Promise((resolve) => {
+    const img = new Image()
+    const url = URL.createObjectURL(file)
+    img.onload = () => {
+      URL.revokeObjectURL(url)
+      let { width, height } = img
+      if (width > maxSize || height > maxSize) {
+        const ratio = Math.min(maxSize / width, maxSize / height)
+        width = Math.round(width * ratio)
+        height = Math.round(height * ratio)
+      }
+      const canvas = document.createElement('canvas')
+      canvas.width = width
+      canvas.height = height
+      canvas.getContext('2d').drawImage(img, 0, 0, width, height)
+      canvas.toBlob(
+        (blob) => resolve(new File([blob], file.name || 'photo.jpg', { type: 'image/jpeg' })),
+        'image/jpeg', quality
+      )
+    }
+    img.onerror = () => { URL.revokeObjectURL(url); resolve(file) }
+    img.src = url
+  })
+}
 
 // Get the current step for an article = first unchecked step in order
 function getArticleCurrentStep(articleId, steps, statuses) {
@@ -29,6 +57,9 @@ export default function ProjectDetail({ projectId, currentWorker, onBack, onSele
   const [newStepName, setNewStepName] = useState('')
   const [confirm, setConfirm] = useState(null)
   const [showPipeline, setShowPipeline] = useState(true)
+  const [photoCounts, setPhotoCounts] = useState({})
+  const [uploadingPhoto, setUploadingPhoto] = useState(null)
+  const photoInputRefs = useRef({})
 
   const load = useCallback(async () => {
     try {
@@ -45,6 +76,14 @@ export default function ProjectDetail({ projectId, currentWorker, onBack, onSele
       if (!activeStep && st.length > 0) setActiveStep(st[0].id)
       const prog = await getProjectProgress(projectId)
       setProgress(prog)
+
+      // Load photo counts per article
+      const counts = {}
+      await Promise.all(art.map(async a => {
+        const photos = await fetchPhotosByArticle(a.id)
+        counts[a.id] = photos.length
+      }))
+      setPhotoCounts(counts)
     } catch {}
     setLoading(false)
   }, [projectId])
@@ -65,6 +104,22 @@ export default function ProjectDetail({ projectId, currentWorker, onBack, onSele
     } catch {
       await load()
     }
+  }
+
+  const handlePhotoUpload = async (articleId, files) => {
+    if (!files?.length) return
+    setUploadingPhoto(articleId)
+    try {
+      for (const file of Array.from(files)) {
+        const compressed = await compressImage(file)
+        await uploadPhoto(articleId, compressed, 'production', currentWorker?.id)
+      }
+      setPhotoCounts(prev => ({ ...prev, [articleId]: (prev[articleId] || 0) + files.length }))
+    } catch (err) {
+      console.error('Upload error:', err)
+    }
+    setUploadingPhoto(null)
+    if (photoInputRefs.current[articleId]) photoInputRefs.current[articleId].value = ''
   }
 
   const handleAddArticle = async () => {
@@ -261,43 +316,69 @@ export default function ProjectDetail({ projectId, currentWorker, onBack, onSele
         />
       ) : (
         <div className="space-y-2">
-          {articlesAtStep.map(article => (
-            <div
-              key={article.id}
-              className="flex items-center gap-3 bg-surface rounded-xl border border-border p-3 transition-all"
-            >
-              {!isReadOnly && (
-                <TouchCheckbox
-                  checked={false}
-                  onChange={() => handleToggle(article.id, activeStep)}
-                />
-              )}
+          {articlesAtStep.map(article => {
+            const photoCount = photoCounts[article.id] || 0
+            const isUploading = uploadingPhoto === article.id
+            return (
               <div
-                className="flex-1 min-w-0 cursor-pointer"
-                onClick={() => onSelectArticle(article.id)}
+                key={article.id}
+                className="bg-surface rounded-xl border border-border p-3 transition-all"
               >
-                <div className="flex items-center gap-2">
-                  <span className="font-medium text-sm text-dark">
-                    {article.title}
-                  </span>
-                  <span className="text-xs text-muted bg-dark/5 px-1.5 py-0.5 rounded">
-                    x{article.quantity}
-                  </span>
+                <div className="flex items-center gap-3">
+                  {!isReadOnly && (
+                    <TouchCheckbox
+                      checked={false}
+                      onChange={() => handleToggle(article.id, activeStep)}
+                    />
+                  )}
+                  <div
+                    className="flex-1 min-w-0 cursor-pointer"
+                    onClick={() => onSelectArticle(article.id)}
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium text-sm text-dark">
+                        {article.title}
+                      </span>
+                      <span className="text-xs text-muted bg-dark/5 px-1.5 py-0.5 rounded">
+                        x{article.quantity}
+                      </span>
+                    </div>
+                    {article.description && article.description !== article.title && (
+                      <p className="text-xs text-muted mt-0.5 truncate">{article.description}</p>
+                    )}
+                  </div>
+                  {!isReadOnly && (
+                    <button
+                      onClick={() => handleDeleteArticle(article.id, article.title)}
+                      className="text-dark/20 hover:text-danger text-sm p-1"
+                    >
+                      ✕
+                    </button>
+                  )}
                 </div>
-                {article.description && article.description !== article.title && (
-                  <p className="text-xs text-muted mt-0.5 truncate">{article.description}</p>
-                )}
+                {/* Photo bar */}
+                <div className="flex items-center gap-2 mt-2 ml-15">
+                  <label className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium cursor-pointer transition-colors
+                    ${isUploading ? 'bg-dark/5 text-muted' : 'bg-dark/4 text-muted hover:bg-primary/8 hover:text-primary'}`}>
+                    <span>📷</span>
+                    <span>{isUploading ? 'Envoi...' : 'Photo'}</span>
+                    <input
+                      ref={el => { photoInputRefs.current[article.id] = el }}
+                      type="file"
+                      accept="image/*"
+                      capture="environment"
+                      className="hidden"
+                      disabled={isUploading}
+                      onChange={e => handlePhotoUpload(article.id, e.target.files)}
+                    />
+                  </label>
+                  {photoCount > 0 && (
+                    <span className="text-xs text-muted">{photoCount} photo{photoCount > 1 ? 's' : ''}</span>
+                  )}
+                </div>
               </div>
-              {!isReadOnly && (
-                <button
-                  onClick={() => handleDeleteArticle(article.id, article.title)}
-                  className="text-dark/20 hover:text-danger text-sm p-1"
-                >
-                  ✕
-                </button>
-              )}
-            </div>
-          ))}
+            )
+          })}
         </div>
       )}
 
