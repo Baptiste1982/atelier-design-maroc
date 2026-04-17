@@ -178,6 +178,19 @@ export async function deleteArticle(id) {
   if (error) throw error
 }
 
+export async function uploadArticleImage(articleId, file) {
+  const ext = file.name?.split('.').pop() || 'jpg'
+  const path = `article-images/${articleId}/${Date.now()}.${ext}`
+  const { error: uploadErr } = await supabase.storage
+    .from('photos')
+    .upload(path, file, { contentType: file.type || 'image/jpeg', upsert: false })
+  if (uploadErr) throw uploadErr
+  const { data } = supabase.storage.from('photos').getPublicUrl(path)
+  const imageUrl = data?.publicUrl
+  await updateArticle(articleId, { image_url: imageUrl })
+  return imageUrl
+}
+
 export async function bulkCreateArticles(projectId, articlesList) {
   const steps = await fetchProjectSteps(projectId)
   const existing = await fetchArticlesByProject(projectId)
