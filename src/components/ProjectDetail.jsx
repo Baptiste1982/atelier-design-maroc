@@ -322,19 +322,19 @@ export default function ProjectDetail({ projectId, currentWorker, onBack, onSele
             return (
               <div
                 key={article.id}
-                className="bg-surface rounded-xl border border-border p-3 transition-all"
+                onClick={() => onSelectArticle(article.id)}
+                className="bg-surface rounded-xl border border-border p-3 transition-all cursor-pointer active:bg-dark/2"
               >
                 <div className="flex items-center gap-3">
                   {!isReadOnly && (
-                    <TouchCheckbox
-                      checked={false}
-                      onChange={() => handleToggle(article.id, activeStep)}
-                    />
+                    <div onClick={e => e.stopPropagation()}>
+                      <TouchCheckbox
+                        checked={false}
+                        onChange={() => handleToggle(article.id, activeStep)}
+                      />
+                    </div>
                   )}
-                  <div
-                    className="flex-1 min-w-0 cursor-pointer"
-                    onClick={() => onSelectArticle(article.id)}
-                  >
+                  <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                       <span className="font-medium text-sm text-dark">
                         {article.title}
@@ -349,7 +349,7 @@ export default function ProjectDetail({ projectId, currentWorker, onBack, onSele
                   </div>
                   {!isReadOnly && (
                     <button
-                      onClick={() => handleDeleteArticle(article.id, article.title)}
+                      onClick={e => { e.stopPropagation(); handleDeleteArticle(article.id, article.title) }}
                       className="text-dark/20 hover:text-danger text-sm p-1"
                     >
                       ✕
@@ -357,7 +357,7 @@ export default function ProjectDetail({ projectId, currentWorker, onBack, onSele
                   )}
                 </div>
                 {/* Photo bar */}
-                <div className="flex items-center gap-2 mt-2 ml-15">
+                <div className="flex items-center gap-2 mt-2 ml-15" onClick={e => e.stopPropagation()}>
                   <label className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium cursor-pointer transition-colors
                     ${isUploading ? 'bg-dark/5 text-muted' : 'bg-dark/4 text-muted hover:bg-primary/8 hover:text-primary'}`}>
                     <span>📷</span>
