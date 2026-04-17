@@ -31,21 +31,23 @@ export default function Layout({ activePage, onNavigate, currentWorker, onLogout
       </main>
 
       {/* Bottom Navigation */}
-      <nav className="fixed bottom-0 left-0 right-0 bg-surface border-t border-border flex items-stretch justify-around z-30">
-        {NAV_ITEMS.map(item => {
-          const isActive = activePage === item.key
-          return (
-            <button
-              key={item.key}
-              onClick={() => onNavigate(item.key)}
-              className={`flex flex-col items-center justify-center gap-0.5 py-3 px-3 min-w-[56px] min-h-[60px] transition-colors
-                ${isActive ? 'text-primary' : 'text-muted'}`}
-            >
-              <item.icon active={isActive} />
-              <span className="text-[10px] font-medium">{item.label}</span>
-            </button>
-          )
-        })}
+      <nav className="fixed bottom-0 left-0 right-0 bg-surface border-t border-border z-30">
+        <div className="flex items-center justify-around h-12">
+          {NAV_ITEMS.map(item => {
+            const isActive = activePage === item.key
+            return (
+              <button
+                key={item.key}
+                onClick={() => onNavigate(item.key)}
+                className={`flex flex-col items-center justify-center gap-0.5 px-3 transition-colors
+                  ${isActive ? 'text-primary' : 'text-muted'}`}
+              >
+                <item.icon active={isActive} />
+                <span className="text-[10px] font-medium">{item.label}</span>
+              </button>
+            )
+          })}
+        </div>
       </nav>
     </div>
   )
