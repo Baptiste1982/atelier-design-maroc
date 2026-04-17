@@ -31,7 +31,7 @@ export default function Layout({ activePage, onNavigate, currentWorker, onLogout
       </main>
 
       {/* Bottom Navigation */}
-      <nav className="fixed bottom-0 left-0 right-0 h-16 bg-surface border-t border-border flex items-center justify-around z-30"
+      <nav className="fixed bottom-0 left-0 right-0 bg-surface border-t border-border flex items-stretch justify-around z-30"
         style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
         {NAV_ITEMS.map(item => {
           const isActive = activePage === item.key
@@ -39,7 +39,7 @@ export default function Layout({ activePage, onNavigate, currentWorker, onLogout
             <button
               key={item.key}
               onClick={() => onNavigate(item.key)}
-              className={`flex flex-col items-center gap-0.5 py-2 px-3 min-w-[56px] transition-colors
+              className={`flex flex-col items-center justify-center gap-0.5 py-3 px-3 min-w-[56px] min-h-[60px] transition-colors
                 ${isActive ? 'text-primary' : 'text-muted'}`}
             >
               <item.icon active={isActive} />
