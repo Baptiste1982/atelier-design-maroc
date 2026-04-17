@@ -31,7 +31,7 @@ export default function Layout({ activePage, onNavigate, currentWorker, onLogout
       </main>
 
       {/* Bottom Navigation */}
-      <nav className="fixed bottom-0 left-0 right-0 bg-surface border-t border-border flex items-stretch justify-around z-30 nav-safe">
+      <nav className="fixed bottom-0 left-0 right-0 bg-surface border-t border-border flex items-stretch justify-around z-30">
         {NAV_ITEMS.map(item => {
           const isActive = activePage === item.key
           return (
