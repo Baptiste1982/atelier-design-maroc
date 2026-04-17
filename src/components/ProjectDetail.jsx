@@ -56,7 +56,7 @@ export default function ProjectDetail({ projectId, currentWorker, onBack, onSele
   const [newArticle, setNewArticle] = useState({ title: '', description: '', quantity: 1, unit: '' })
   const [newStepName, setNewStepName] = useState('')
   const [confirm, setConfirm] = useState(null)
-  const [showPipeline, setShowPipeline] = useState(true)
+  const [showPipeline, setShowPipeline] = useState(false)
   const [articlePhotos, setArticlePhotos] = useState({})
   const [uploadingPhoto, setUploadingPhoto] = useState(null)
   const [uploadingImage, setUploadingImage] = useState(null)
@@ -263,7 +263,7 @@ export default function ProjectDetail({ projectId, currentWorker, onBack, onSele
         onClick={() => setShowPipeline(!showPipeline)}
         className="w-full flex items-center justify-between px-1 mb-2 text-xs font-semibold text-muted uppercase tracking-wider"
       >
-        <span>Avancement par etape</span>
+        <span>Avancement par etape — {progress.percent}%</span>
         <span className="text-[10px]">{showPipeline ? '▲' : '▼'}</span>
       </button>
       {showPipeline && (
