@@ -57,7 +57,7 @@ export default function ProjectDetail({ projectId, currentWorker, onBack, onSele
   const [newStepName, setNewStepName] = useState('')
   const [confirm, setConfirm] = useState(null)
   const [showPipeline, setShowPipeline] = useState(true)
-  const [photoCounts, setPhotoCounts] = useState({})
+  const [articlePhotos, setArticlePhotos] = useState({})
   const [uploadingPhoto, setUploadingPhoto] = useState(null)
   const photoInputRefs = useRef({})
 
@@ -76,13 +76,13 @@ export default function ProjectDetail({ projectId, currentWorker, onBack, onSele
       const prog = await getProjectProgress(projectId)
       setProgress(prog)
 
-      // Load photo counts per article
-      const counts = {}
+      // Load photos per article (latest first for thumbnail)
+      const photosMap = {}
       await Promise.all(art.map(async a => {
         const photos = await fetchPhotosByArticle(a.id)
-        counts[a.id] = photos.length
+        photosMap[a.id] = photos
       }))
-      setPhotoCounts(counts)
+      setArticlePhotos(photosMap)
     } catch {}
     setLoading(false)
   }, [projectId])
@@ -113,7 +113,9 @@ export default function ProjectDetail({ projectId, currentWorker, onBack, onSele
         const compressed = await compressImage(file)
         await uploadPhoto(articleId, compressed, 'production', currentWorker?.id)
       }
-      setPhotoCounts(prev => ({ ...prev, [articleId]: (prev[articleId] || 0) + files.length }))
+      // Reload photos for this article
+      const photos = await fetchPhotosByArticle(articleId)
+      setArticlePhotos(prev => ({ ...prev, [articleId]: photos }))
     } catch (err) {
       console.error('Upload error:', err)
     }
@@ -307,7 +309,9 @@ export default function ProjectDetail({ projectId, currentWorker, onBack, onSele
       ) : (
         <div className="space-y-2">
           {displayedArticles.map(article => {
-            const photoCount = photoCounts[article.id] || 0
+            const photos = articlePhotos[article.id] || []
+            const photoCount = photos.length
+            const thumbUrl = photos[0]?.photo_url
             const isUploading = uploadingPhoto === article.id
             const currentStepId = articleCurrentStep[article.id]
             const isDone = currentStepId === '__done'
@@ -321,20 +325,24 @@ export default function ProjectDetail({ projectId, currentWorker, onBack, onSele
                 className={`bg-surface rounded-xl border p-3 transition-all cursor-pointer active:bg-dark/2
                   ${isDone ? 'border-primary/20' : 'border-border'}`}
               >
-                <div className="flex items-center gap-3">
-                  {!isReadOnly && !isDone && (
+                <div className="flex items-start gap-3">
+                  {/* Thumbnail or Checkbox */}
+                  {thumbUrl ? (
+                    <div className="w-16 h-16 min-w-16 rounded-lg overflow-hidden bg-dark/5 flex-shrink-0">
+                      <img src={thumbUrl} alt="" className="w-full h-full object-cover" />
+                    </div>
+                  ) : !isReadOnly && !isDone ? (
                     <div onClick={e => e.stopPropagation()}>
                       <TouchCheckbox
                         checked={false}
                         onChange={() => handleToggle(article.id, currentStepId)}
                       />
                     </div>
-                  )}
-                  {isDone && (
+                  ) : isDone ? (
                     <div className="w-12 h-12 min-w-12 rounded-xl bg-primary/10 flex items-center justify-center text-primary text-lg">
                       ✓
                     </div>
-                  )}
+                  ) : null}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                       <span className={`font-medium text-sm ${isDone ? 'text-muted' : 'text-dark'}`}>
@@ -356,34 +364,40 @@ export default function ProjectDetail({ projectId, currentWorker, onBack, onSele
                         </div>
                       )}
                     </div>
+                    {/* Photo bar */}
+                    <div className="flex items-center gap-2 mt-1.5" onClick={e => e.stopPropagation()}>
+                      <label className={`flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium cursor-pointer transition-colors
+                        ${isUploading ? 'bg-dark/5 text-muted' : 'bg-dark/4 text-muted hover:bg-primary/8 hover:text-primary'}`}>
+                        <span>📷</span>
+                        <span>{isUploading ? 'Envoi...' : photoCount > 0 ? `${photoCount} photo${photoCount > 1 ? 's' : ''}` : 'Photo'}</span>
+                        <input
+                          ref={el => { photoInputRefs.current[article.id] = el }}
+                          type="file"
+                          accept="image/*"
+                          capture="environment"
+                          className="hidden"
+                          disabled={isUploading}
+                          onChange={e => handlePhotoUpload(article.id, e.target.files)}
+                        />
+                      </label>
+                      {/* Checkbox when photo is shown as thumbnail */}
+                      {thumbUrl && !isReadOnly && !isDone && (
+                        <button
+                          onClick={e => { e.stopPropagation(); handleToggle(article.id, currentStepId) }}
+                          className="flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium bg-dark/4 text-muted hover:bg-primary/8 hover:text-primary transition-colors"
+                        >
+                          ✓ Valider
+                        </button>
+                      )}
+                    </div>
                   </div>
                   {!isReadOnly && (
                     <button
                       onClick={e => { e.stopPropagation(); handleDeleteArticle(article.id, article.title) }}
-                      className="text-dark/20 hover:text-danger text-sm p-1"
+                      className="text-dark/20 hover:text-danger text-sm p-1 mt-1"
                     >
                       ✕
                     </button>
-                  )}
-                </div>
-                {/* Photo bar */}
-                <div className="flex items-center gap-2 mt-2 pl-15" onClick={e => e.stopPropagation()}>
-                  <label className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium cursor-pointer transition-colors
-                    ${isUploading ? 'bg-dark/5 text-muted' : 'bg-dark/4 text-muted hover:bg-primary/8 hover:text-primary'}`}>
-                    <span>📷</span>
-                    <span>{isUploading ? 'Envoi...' : 'Photo'}</span>
-                    <input
-                      ref={el => { photoInputRefs.current[article.id] = el }}
-                      type="file"
-                      accept="image/*"
-                      capture="environment"
-                      className="hidden"
-                      disabled={isUploading}
-                      onChange={e => handlePhotoUpload(article.id, e.target.files)}
-                    />
-                  </label>
-                  {photoCount > 0 && (
-                    <span className="text-xs text-muted">{photoCount} photo{photoCount > 1 ? 's' : ''}</span>
                   )}
                 </div>
               </div>
